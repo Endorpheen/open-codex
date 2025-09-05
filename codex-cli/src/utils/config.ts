@@ -89,7 +89,8 @@ function getAPIKeyForProviderOrExit(provider: string): string {
 function baseURLForProvider(provider: string): string {
   switch (provider) {
     case "openai":
-      return "https://api.openai.com/v1";
+      // Allow overriding the OpenAI API base via env for self-hosted/proxy setups
+      return process.env["OPENAI_BASE_URL"] || "https://api.openai.com/v1";
     case "ollama":
       return process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434/v1";
     case "gemini":
