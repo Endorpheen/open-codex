@@ -45,7 +45,7 @@ type AgentLoopParams = {
   onLoading: (loading: boolean) => void;
   onReset: () => void;
 
-  /** Called when the command is not auto-approved to request explicit user review. */
+  /* Called when the command is not auto-approved to request explicit user review. */
   getCommandConfirmation: (
     command: Array<string>,
     applyPatch: ApplyPatchCommand | undefined,
@@ -72,35 +72,35 @@ export class AgentLoop {
     applyPatch: ApplyPatchCommand | undefined,
   ) => Promise<CommandConfirmation>;
 
-  /**
+  /*
    * A reference to the currently active stream returned from the OpenAI
    * client. We keep this so that we can abort the request if the user decides
    * to interrupt the current task (e.g. via the escape hot‑key).
    */
   private currentStream: Stream<ChatCompletionChunk> | null = null;
-  /** Incremented with every call to `run()`. Allows us to ignore stray events
+  /* Incremented with every call to `run()`. Allows us to ignore stray events
    * from streams that belong to a previous run which might still be emitting
    * after the user has canceled and issued a new command. */
   private generation = 0;
-  /** AbortController for in‑progress tool calls (e.g. shell commands). */
+  /* AbortController for in‑progress tool calls (e.g. shell commands). */
   private execAbortController: AbortController | null = null;
-  /** Set to true when `cancel()` is called so `run()` can exit early. */
+  /* Set to true when `cancel()` is called so `run()` can exit early. */
   private canceled = false;
-  /** Function calls that were emitted by the model but never answered because
+  /* Function calls that were emitted by the model but never answered because
    *  the user cancelled the run.  We keep the `call_id`s around so the *next*
    *  request can send a dummy `function_call_output` that satisfies the
    *  contract and prevents the
    *    400 | No tool output found for function call …
    *  error from OpenAI. */
   private pendingAborts: Set<string> = new Set();
-  /** Set to true by `terminate()` – prevents any further use of the instance. */
+  /* Set to true by `terminate()` – prevents any further use of the instance. */
   private terminated = false;
-  /** Master abort controller – fires when terminate() is invoked. */
+  /* Master abort controller – fires when terminate() is invoked. */
   private readonly hardAbort = new AbortController();
 
   private onReset: () => void;
 
-  /**
+  /*
    * Abort the ongoing request/stream, if any. This allows callers (typically
    * the UI layer) to interrupt the current agent step so the user can issue
    * new instructions without waiting for the model to finish.
@@ -161,7 +161,7 @@ export class AgentLoop {
     }
   }
 
-  /**
+  /*
    * Hard‑stop the agent loop. After calling this method the instance becomes
    * unusable: any in‑flight operations are aborted and subsequent invocations
   public terminate(): void {
@@ -262,11 +262,12 @@ export class AgentLoop {
     if (this.canceled) {
       return [];
     }
-    if (itemArg.role !== "assistant") {
+    // Accept either a full assistant message or a delta-shaped item that
+    // carries tool_calls but may be missing role.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (itemArg.role !== "assistant" && !((itemArg as any).tool_calls?.[0])) {
       return [];
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let item: any = itemArg;
     if (itemArg.tool_calls?.[0]) {
       item = itemArg.tool_calls?.[0];
@@ -758,17 +759,23 @@ export class AgentLoop {
                   { role: "assistant" }
                 >;
               } else if (delta) {
-                message = delta as Extract<
+                // Wrap delta into an assistant-shaped message so role is present
+                // and tool_calls can be handled reliably downstream.
+                message = ({ role: "assistant", ...(delta as any) }) as Extract<
                   ChatCompletionChunk,
                   { role: "assistant" }
                 >;
               } else if (rawContent) {
-                // Final fallback: construct a minimal assistant message
                 message = {
                   role: "assistant",
                   content: "",
                 } as Extract<ChatCompletionChunk, { role: "assistant" }>;
               }
+            }
+
+            // Ensure role is present for downstream tool handling
+            if (message && !(message as { role?: string }).role) {
+              (message as { role: "assistant" }).role = "assistant";
             }
 
             if (rawContent && message) {
@@ -1202,7 +1209,7 @@ You MUST adhere to the following criteria when executing the task:
 - Analyzing code for vulnerabilities is allowed.
 - Showing user code and tool call details is allowed.
 - User instructions may overwrite the *CODING GUIDELINES* section in this developer message.
-- Use the \`apply_patch\` shell command to edit files: {"cmd":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n-  pass\\n+  return 123\\n*** End Patch"]}
+- Use the \`apply_patch\` shell command to edit files: {"cmd":["apply_patch","...* Begin Patch\\n...* Update File: path/to/file.py\\n@@ def example():\\n-  pass\\n+  return 123\\n...* End Patch"]}
 - If completing the user's task requires writing or modifying files:
     - Your code and final answer should follow these *CODING GUIDELINES*:
         - Fix the problem at the root cause rather than applying surface-level patches, when possible.
