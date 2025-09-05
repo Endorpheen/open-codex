@@ -724,23 +724,68 @@ export class AgentLoop {
             if (isLoggingEnabled()) {
               log(`AgentLoop.run(): completion chunk ${chunk.id}`);
             }
-            const delta = chunk?.choices?.[0]?.delta;
-            const content = delta?.content;
-            const tool_call = delta?.tool_calls?.[0];
+            const choice0 = chunk?.choices?.[0];
+            const delta = choice0?.delta;
+            // Prefer streaming delta content, but fall back to full message.content or legacy text
+            const rawContent =
+              delta?.content ??
+              // Some OpenAI-compatible servers return the final message on non-stream responses
+              // even when stream=true is requested. Handle that shape here.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (choice0 as any)?.message?.content ??
+              // Legacy Completion API compatibility
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (choice0 as any)?.text;
+            const tool_call =
+              delta?.tool_calls?.[0] ??
+              // Also support tool calls present directly on the final message
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (choice0 as any)?.message?.tool_calls?.[0];
+
             if (!message) {
-              message = delta as Extract<
-                ChatCompletionChunk,
-                { role: "assistant" }
-              >;
-            } else {
-              if (content) {
-                message.content = message.content ?? "";
-                message.content += content;
+              if (choice0 && (choice0 as unknown as { message?: unknown }).message) {
+                // If the server provided a full message, start from it
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                message = (choice0 as any).message as Extract<
+                  ChatCompletionChunk,
+                  { role: "assistant" }
+                >;
+              } else if (delta) {
+                message = delta as Extract<
+                  ChatCompletionChunk,
+                  { role: "assistant" }
+                >;
+              } else if (rawContent) {
+                // Final fallback: construct a minimal assistant message
+                message = {
+                  role: "assistant",
+                  content: "",
+                } as Extract<ChatCompletionChunk, { role: "assistant" }>;
               }
-              if (message && !message.tool_calls && tool_call) {
-                // @ts-expect-error FIXME
-                message.tool_calls = [tool_call];
+            }
+
+            if (rawContent && message) {
+              // Avoid duplicating content when starting from a full message
+              if (
+                typeof (message as { content?: unknown }).content === "string"
+              ) {
+                const current = (message as { content?: string }).content ?? "";
+                if (rawContent !== current) {
+                  (message as { content: string }).content = current + rawContent;
+                }
               } else {
+                // If content is structured (array), overwrite with raw string
+                // to preserve CLI output; upstream formatters will handle arrays.
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (message as any).content = rawContent;
+              }
+            }
+
+            if (message) {
+              if (!message.tool_calls && tool_call) {
+                // @ts-expect-error FIXME - normalising tool_calls during stream
+                message.tool_calls = [tool_call];
+              } else if (tool_call) {
                 if (tool_call?.function?.name) {
                   message.tool_calls![0]!.function.name +=
                     tool_call.function.name;
