@@ -725,6 +725,15 @@ export class AgentLoop {
               log(`AgentLoop.run(): completion chunk ${chunk.id}`);
             }
             const choice0 = chunk?.choices?.[0];
+            // Временный лог для отладки ChatMock: печать полного объекта choice
+            try {
+              // Используем console.log по требованию
+              // Печать всего объекта, который приходит от ChatMock
+              // eslint-disable-next-line no-console
+              console.log("RAW CHOICE:", JSON.stringify(choice0, null, 2));
+            } catch {
+              // ignore JSON stringify issues
+            }
             const delta = choice0?.delta;
             // Prefer streaming delta content, but fall back to full message.content or legacy text
             const rawContent =
@@ -735,7 +744,8 @@ export class AgentLoop {
               (choice0 as any)?.message?.content ??
               // Legacy Completion API compatibility
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (choice0 as any)?.text;
+              (choice0 as any)?.text ??
+              "";
             const tool_call =
               delta?.tool_calls?.[0] ??
               // Also support tool calls present directly on the final message
