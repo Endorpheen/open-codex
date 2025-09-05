@@ -164,8 +164,6 @@ export class AgentLoop {
   /**
    * Hard‑stop the agent loop. After calling this method the instance becomes
    * unusable: any in‑flight operations are aborted and subsequent invocations
-   * of `run()` will throw.
-   */
   public terminate(): void {
     if (this.terminated) {
       return;
@@ -716,6 +714,9 @@ export class AgentLoop {
         }
 
         try {
+          // Accumulate assistant text for ChatMock streaming
+          let fullContent = "";
+          let emittedFinalText = false;
           let message:
             | Extract<ChatCompletionMessageParam, { role: "assistant" }>
             | undefined;
@@ -725,15 +726,6 @@ export class AgentLoop {
               log(`AgentLoop.run(): completion chunk ${chunk.id}`);
             }
             const choice0 = chunk?.choices?.[0];
-            // Временный лог для отладки ChatMock: печать полного объекта choice
-            try {
-              // Используем console.log по требованию
-              // Печать всего объекта, который приходит от ChatMock
-              // eslint-disable-next-line no-console
-              console.log("RAW CHOICE:", JSON.stringify(choice0, null, 2));
-            } catch {
-              // ignore JSON stringify issues
-            }
             const delta = choice0?.delta;
             // Prefer streaming delta content, but fall back to full message.content or legacy text
             const rawContent =
@@ -751,6 +743,11 @@ export class AgentLoop {
               // Also support tool calls present directly on the final message
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (choice0 as any)?.message?.tool_calls?.[0];
+
+            // Accumulate plain text deltas
+            if (typeof rawContent === "string" && rawContent) {
+              fullContent += rawContent;
+            }
 
             if (!message) {
               if (choice0 && (choice0 as unknown as { message?: unknown }).message) {
@@ -824,11 +821,34 @@ export class AgentLoop {
                     // Add results to the next turn's input
                     turnInput.push(...results);
                   }
-                } else if (message && Object.keys(message).length > 0) {
-                  stageItem(message);
+                } else if (finish_reason === "stop") {
+                  // Emit a single final assistant message with the full content
+                  const finalMsg: Extract<
+                    ChatCompletionMessageParam,
+                    { role: "assistant" }
+                  > = {
+                    role: "assistant",
+                    // Keep content as a flat string for CLI rendering
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    content: fullContent as any,
+                  };
+                  stageItem(finalMsg);
+                  fullContent = "";
+                  emittedFinalText = true;
                 }
               }
             }
+          }
+          // Fallback: some servers end the stream without finish_reason:"stop".
+          // If we accumulated text but didn't emit it yet, emit once now.
+          if (!emittedFinalText && fullContent && !this.canceled) {
+            const finalMsg: Extract<ChatCompletionMessageParam, { role: "assistant" }> = {
+              role: "assistant",
+              // keep as flat string for CLI rendering
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              content: fullContent as any,
+            };
+            stageItem(finalMsg);
           }
         } catch (err: unknown) {
           // Gracefully handle an abort triggered via `cancel()` so that the
