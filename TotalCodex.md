@@ -69,7 +69,7 @@ alias codex-openrouter='cp ~/.codex/config-openrouter.json ~/.codex/config.json 
 
 Чтобы использовать **локальный сервер** для обработки запросов:
 
-1. Установите [ChatMock](https://github.com/openai/chatmock).
+1. Установите [ChatMock](https://github.com/RayBytes/ChatMock).
 2. Запустите сервер:
 
    ```bash
