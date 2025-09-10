@@ -67,27 +67,23 @@ alias codex-openrouter='cp ~/.codex/config-openrouter.json ~/.codex/config.json 
 
 ## Работа с ChatMock
 
-Чтобы использовать **локальный сервер** для обработки запросов:
+Чтобы использовать локальный сервер для обработки запросов:
 
-1. Установите [ChatMock](https://github.com/RayBytes/ChatMock).
-2. Запустите сервер:
-
+1. Установите ChatMock.
+2. Залогиньтесь:
    ```bash
-   chatmock serve --port 8000
-   ```
-3. В новой сессии установите переменные окружения:
-
-   ```bash
-   export OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
-   export OPENAI_API_KEY="dummy_key"
-   ```
-4. Запустите Codex:
-
-   ```bash
-   node dist/cli.js -m gpt-5
+   python chatmock.py login
    ```
 
-Теперь агент будет подключаться к локальному ChatMock и использовать его как бэкенд.
+Запустите сервер:
+
+```bash
+# если используете локальную репу
+python chatmock.py serve --port 8000
+
+# если установлен через Homebrew/pip
+chatmock serve --port 8000
+```
 
 ---
 
